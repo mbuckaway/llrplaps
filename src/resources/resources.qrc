@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/images">
+        <file>logo.png</file>
+        <file>splashscreen.png</file>
+    </qresource>
+    <qresource prefix="/icons">
+        <file>App.icns</file>
+        <file>App.ico</file>
+    </qresource>
+    <qresource prefix="/stylesheets">
+    </qresource>
+</RCC>

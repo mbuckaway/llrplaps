@@ -1,0 +1,27 @@
+cmake_minimum_required(VERSION 3.6)
+
+project(LLRPLaps)
+
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+    set(QTDIR "C:\\Program Files\\Qt")
+elseif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+set(QTDIR "/Applications/Qt/5.9")
+else()
+set(QTDIR "/usr/local")
+endif()
+
+set(INSTALL_LIBDIR "${CMAKE_CURRENT_SOURCE_DIR}/lib")
+set(INSTALL_INCLUDEDIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(INSTALL_BINDIR "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+set(LTKCPP_INCLUDE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/LLRPToolkit/include")
+set(LTKCPP_LIB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/LLRPToolkit/lib")
+set(TOP_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
+
+add_subdirectory(src)
+
+
