@@ -31,11 +31,11 @@ set(laps_SOURCES
         creader.cpp
         main.cpp
         mainwindow.cpp
-        )
+        ctaginfo.cpp ctaginfo.h exceptions.cpp)
 set(laps_HEADERS
         creader.h
         mainwindow.h
-        )
+        exceptions.h)
 
 set(laps_FORMS
         mainwindow.ui

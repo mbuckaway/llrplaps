@@ -21,7 +21,7 @@ MainWindow::MainWindow(QWidget *parent) :
         // Open connection to reader
 
         int verbose = 9;
-        readerList.append(new CReader("192.168.1.98", verbose));
+        readerList.append(new CReader("192.168.36.210", verbose));
         for (int i=0; i<readerList.size(); i++) {
             connect(readerList[0], &CReader::newTag, this, &MainWindow::onNewTag);
             connect(readerList[0], &CReader::newLogMessage, this, &MainWindow::onNewLogMessage);
@@ -56,19 +56,19 @@ MainWindow::~MainWindow()
 void MainWindow::onReaderCheckTimeout(void) {
     readerCheckTimer.stop();
     for (int i=0; i<readerList.size(); i++) {
-        readerList[i]->processRecentChipsSeen();
+        readerList[i]->ProcessRecentChipsSeen();
     }
     readerCheckTimer.start();
 }
 
 
 void MainWindow::onNewTag(const CTagInfo& tagInfo) {
-    printf("%d %llu: %02x %02x %02x %02x %02x %02x\n", tagInfo.antennaId, tagInfo.getTimeStampUSec(), tagInfo.data[0], tagInfo.data[1], tagInfo.data[2], tagInfo.data[3], tagInfo.data[4], tagInfo.data[5]);
+    printf("%d %llu: %02x %02x %02x %02x %02x %02x\n", tagInfo.AntennaId, tagInfo.getTimeStampUSec(), tagInfo.data[0], tagInfo.data[1], tagInfo.data[2], tagInfo.data[3], tagInfo.data[4], tagInfo.data[5]);
     fflush(stdout);
 }
 
 
 void MainWindow::onNewLogMessage(const QString& s) {
-    //printf("%s\n", s.toLatin1().data());
-    //fflush(stdout);
+    printf("%s\n", s.toLatin1().data());
+    fflush(stdout);
 }
