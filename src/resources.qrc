@@ -1,0 +1,38 @@
+<RCC>
+    <qresource prefix="/images">
+        <file>logo.png</file>
+        <file>App.png</file>
+        <file>account.png</file>
+        <file>accountmanager.png</file>
+        <file>apple.png</file>
+        <file>backup.png</file>
+        <file>dashboard.png</file>
+        <file>download.png</file>
+        <file>home.png</file>
+        <file>remove.png</file>
+        <file>restore.png</file>
+        <file>sharing.png</file>
+        <file>sync.png</file>
+        <file>windows.png</file>
+        <file>error.png</file>
+        <file>reports.png</file>
+        <file>success.png</file>
+        <file>warning.png</file>
+        <file>lock.png</file>
+        <file>menu.png</file>
+        <file>busybar.gif</file>
+        <file>splashscreen.png</file>
+    </qresource>
+    <qresource prefix="/icons">
+        <file>App.icns</file>
+        <file>App.ico</file>
+    </qresource>
+    <qresource prefix="/stylesheets">
+        <file>styles_nav_button_off.css</file>
+        <file>styles_nav_button_on.css</file>
+        <file>styles.css</file>
+        <file>styles_config.css</file>
+        <file>styles_table_widget_off.css</file>
+        <file>styles_table_widget_on.css</file>
+    </qresource>
+</RCC>
