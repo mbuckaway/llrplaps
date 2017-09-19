@@ -8,12 +8,24 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTORCC ON)
 
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+set(LIBXML2_INCLUDE_DIR "${TOP_PATH}/thirdparty/include/libxml2")
+set(LIBXML2_LIBRARIES "${TOP_PATH}/thirdparty/lib/libxml2.lib")
+set(LIBXSLT_INCLUDE_DIR "${TOP_PATH}/thirdparty/include/libxslt")
+set(LIBXSLT_LIBRARIES "${TOP_PATH}/thirdparty/lib/libxslt.lib")
+set(LIBXSLT_XSLTPROC_EXECUTABLE "${TOP_PATH}/thirdparty/bin/xsltproc.exe")
+set(WINSOCK "Ws2_32.lib")
+else()
 find_package(LIBXML2 REQUIRED)
 find_package(LIBXSLT REQUIRED)
+set(WINSOCK "")
+endif()
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-		set(CMAKE_PREFIX_PATH "${QTDIR}/msvc2013_64/lib/cmake")
-        set(EXE_OPTION "WIN32")
+	set(CMAKE_PREFIX_PATH "${QTDIR}/msvc2015_64/lib/cmake")
+	set(EXE_OPTION "WIN32")
+    set(LTKCPPLIB "ltkcpp.lib")
+    set(LLRPLIB "llrplib.lib")
 elseif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(CMAKE_PREFIX_PATH "${QTDIR}/clang_64/lib/cmake")
     set(LTKCPPLIB "libltkcpp.dylib")
@@ -71,6 +83,8 @@ link_directories(
         ${LTKCPP_LIB_PATH}
 )
 
+message("Library dir: ${LTKCPP_LIB_PATH}")
+
 add_executable(laps ${EXE_OPTION}
         ${laps_SOURCES}
         ${laps_HEADERS_MOC}
@@ -89,6 +103,7 @@ target_link_libraries(laps
 	    ${LIBXSLT_LIBRARIES}
         ${LTKCPPLIB}
         ${LLRPLIB}
+		${WINSOCK}
 )
 
 set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${CMAKE_CURRENT_BINARY_DIR}/laps_automoc.cpp" )
