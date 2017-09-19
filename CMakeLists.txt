@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.6)
 project(LLRPLaps)
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-    set(QTDIR "C:\\Program Files\\Qt")
+    set(QTDIR "C:\\Qt\\5.9.1")
 elseif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 set(QTDIR "/Applications/Qt/5.9")
 else()
