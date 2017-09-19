@@ -7,7 +7,7 @@ git clone https://github.com/mbuckaway/LLRPToolkit LLRPToolkit
 cd LLRPToolkit
 mkdir build
 cd build
-cmake -G "Makefiles"
+cmake -G "Unix Makefiles"
 
 
 
