@@ -19,7 +19,7 @@ public:
 private:
     Ui::MainWindow *ui;
     QTimer readerCheckTimer;
-    QList<CReader *> readerList;
+    QList<LLRPLaps::CReader *> readerList;
 private slots:
     void onReaderCheckTimeout(void);
     void onNewTag(const CTagInfo& tagInfo);

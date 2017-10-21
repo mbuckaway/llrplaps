@@ -20,6 +20,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <ltkcpp_platform.h>
 #include <ltkcpp_base.h>
 
 namespace LLRPLaps
@@ -39,5 +40,20 @@ namespace LLRPLaps
         explicit ReaderErrorDetailsException(const char* what);
         static std::string CErrorDetailsToString(const LLRP::CErrorDetails *errorDetails, const char* messageName, const char* function);
     };
+
+    class ReaderConnectionException : public ReaderException
+    {
+    public:
+        explicit ReaderConnectionException(const std::string& what);
+        explicit ReaderConnectionException(const char* what);
+    };
+
+    class ReaderTimeoutException : public ReaderException
+    {
+    public:
+        explicit ReaderTimeoutException(const std::string& what);
+        explicit ReaderTimeoutException(const char* what);
+    };
+
 }
 #endif //LLRPLAPS_EXCEPTIONS_H

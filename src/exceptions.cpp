@@ -22,15 +22,15 @@
 
 namespace LLRPLaps
 {
-    ReaderException::ReaderException() : std::runtime_error("Reader Error")
+    ReaderException::ReaderException() noexcept : std::runtime_error("Reader Error")
     {
     }
 
-    ReaderException::ReaderException(const std::string& what) : std::runtime_error("Reader Error: " + what)
+    ReaderException::ReaderException(const std::string& what) noexcept : std::runtime_error("Reader Error: " + what)
     {
     }
 
-    ReaderException::ReaderException(const char* what) : std::runtime_error("Reader Error: " + std::string(what))
+    ReaderException::ReaderException(const char* what) noexcept : std::runtime_error("Reader Error: " + std::string(what))
     {
     }
 
@@ -55,16 +55,37 @@ namespace LLRPLaps
         what.append(" failed: ");
         what.append(errorDetails->m_pWhatStr);
 
-        if (NULL != errorDetails->m_pRefType)
+        if (nullptr != errorDetails->m_pRefType)
         {
             what.append(": Reference type ");
             what.append(errorDetails->m_pRefType->m_pName);
         }
 
-        if (NULL != errorDetails->m_pRefField)
+        if (nullptr != errorDetails->m_pRefField)
         {
             what.append(": Reference field ");
             what.append(errorDetails->m_pRefField->m_pName);
         }
+        return what;
+    }
+
+    ReaderConnectionException::ReaderConnectionException(const std::string &what) : ReaderException(what)
+    {
+
+    }
+
+    ReaderConnectionException::ReaderConnectionException(const char *what) : ReaderException(what)
+    {
+
+    }
+
+    ReaderTimeoutException::ReaderTimeoutException(const char *what) : ReaderException(what)
+    {
+
+    }
+
+    ReaderTimeoutException::ReaderTimeoutException(const std::string &what) : ReaderException(what)
+    {
+
     }
 }

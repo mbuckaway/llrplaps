@@ -1,31 +1,35 @@
 // creader.cpp
 
 
+#include <memory>
 #include <QList>
 
-#include "exceptions.h
+#include <ltkcpp_platform.h>
+#include <ltkcpp.h>
+#include "exceptions.h"
 #include "creader.h"
-#include "ltkcpp.h"
+#include "ctaginfo.h"
 
 
 namespace LLRPLaps
 {
+    const int CReader::TIMEOUT_10SEC = 10000;
+    const int CReader::TIMEOUT_7SEC = 7000;
+    const int CReader::TIMEOUT_5SEC = 5000;
 
-    CReader::CReader(QString readerHostName)
+    CReader::CReader(QString readerHostName): _readerHostname (readerHostName), _connectionToReader(nullptr), _typeRegistry(nullptr)
     {
-        // FIXME: Move code to an initialation method. Throwing exceptions in a constructor is a bad idea
-        _connectionToReader = NULL;
-        _typeRegistry = NULL;
-        int rc(1);
-        QString s;
+    }
 
+    void CReader::Connect()
+    {
         /*
          * Allocate the type registry. This is needed
          * by the connection to decode.
          */
 
         _typeRegistry = LLRP::getTheTypeRegistry();
-        if (!_typeRegistry.get())
+        if (!_typeRegistry)
         {
             throw LLRPLaps::ReaderException("ERROR: getTheTypeRegistry failed");
         }
@@ -37,7 +41,7 @@ namespace LLRPLaps
          * but not actually connected to the reader yet.
          */
 
-        _connectionToReader = new LLRP::CConnection(_typeRegistry.get(), 32u * 1024u);
+        _connectionToReader = std::make_shared<LLRP::CConnection>(new LLRP::CConnection(_typeRegistry, 32u * 1024u));
         if (!_connectionToReader.get())
         {
             throw LLRPLaps::ReaderException("ERROR: new CConnection failed");
@@ -47,9 +51,9 @@ namespace LLRPLaps
          * Open the connection to the reader
          */
 
-        if (_connectionToReader->openConnectionToReader(readerHostName.toLatin1().data()))
+        if (_connectionToReader->openConnectionToReader(_readerHostname.toLatin1().data()))
         {
-            throw LLRPLaps::ReaderException(s.sprintf("ERROR: connect: %s (%d)", _connectionToReader->getConnectError(), rc).toStdString());
+            throw LLRPLaps::ReaderException(QString().sprintf("ERROR: connect: %s", _connectionToReader->getConnectError()).toStdString());
         }
 
         /*
@@ -58,32 +62,16 @@ namespace LLRPLaps
          * Each routine prints messages.
          */
 
-        rc = checkConnectionStatus();
-        if (rc != 0)
-        {
-            throw LLRPLaps::ReaderException(s.sprintf(
-                    "checkConnectionStatus(): error %d - Cannot connect to tag reader.  This may mean another instance of this program is already running."
-                    , rc).toStdString());
-        }
-
+        checkConnectionStatus();
         scrubConfiguration();
         addROSpec();
-        if (enableROSpec() != 0)
-        {
-            emit newLogMessage(s.sprintf("enableROSpec() failed"));
-            return;
-        }
+        enableROSpec();
     }
 
-
-    int CReader::ProcessRecentChipsSeen(void)
+    void CReader::ProcessRecentChipsSeen()
     {
-        if (startROSpec() != 0)
-        {
-            return 0;
-        }
+        startROSpec();
         awaitReports();
-        return 0;
     }
 
 
@@ -132,29 +120,24 @@ namespace LLRPLaps
  **
  *****************************************************************************/
 
-    int CReader::checkConnectionStatus(void)
+    void CReader::checkConnectionStatus()
     {
-        std::shared_ptr<LLRP::CMessage> message;
-        LLRP::CREADER_EVENT_NOTIFICATION *pNtf;
-        LLRP::CReaderEventNotificationData *pNtfData;
-        LLRP::CConnectionAttemptEvent *pEvent;
-        QString s;
+        LLRP::CREADER_EVENT_NOTIFICATION *creaderEventNotification;
 
         /*
          * Expect the notification within 10 seconds.
          * It is suppose to be the very first message sent.
          */
-
-        message = recvMessage(10000);
+        std::shared_ptr<LLRP::CMessage> message = recvMessage(TIMEOUT_10SEC);
 
         /*
          * recvMessage() returns NULL if something went wrong.
          */
 
-        if (NULL == message)
+        if (nullptr == message.get())
         {
             /* recvMessage already tattled */
-            goto fail;
+            throw LLRPLaps::ReaderConnectionException("recvMessage failed: No connection");
         }
 
         /*
@@ -165,7 +148,7 @@ namespace LLRPLaps
 
         if (&LLRP::CREADER_EVENT_NOTIFICATION::s_typeDescriptor != message->m_pType)
         {
-            goto fail;
+            throw LLRPLaps::ReaderConnectionException("recvMessage failed: Wrong message type");
         }
 
         /*
@@ -173,21 +156,22 @@ namespace LLRPLaps
          * traverse to the ReaderEventNotificationData parameter.
          */
 
-        pNtf = (LLRP::CREADER_EVENT_NOTIFICATION *) message;
-        pNtfData = pNtf->getReaderEventNotificationData();
-        if (NULL == pNtfData)
+        creaderEventNotification = dynamic_cast<LLRP::CREADER_EVENT_NOTIFICATION*>(message.get());
+        auto *readerEventNotificationData = creaderEventNotification->getReaderEventNotificationData();
+
+        if (nullptr == readerEventNotificationData)
         {
-            goto fail;
+            throw LLRPLaps::ReaderConnectionException("recvMessage failed: Wrong message type");
         }
 
         /*
          * The ConnectionAttemptEvent parameter must be present.
          */
 
-        pEvent = pNtfData->getConnectionAttemptEvent();
-        if (NULL == pEvent)
+        auto *connectionAttemptEvent = readerEventNotificationData->getConnectionAttemptEvent();
+        if (NULL == connectionAttemptEvent)
         {
-            goto fail;
+            throw LLRPLaps::ReaderConnectionException("recvMessage failed: Connection parameter not present");
         }
 
         /*
@@ -195,38 +179,10 @@ namespace LLRPLaps
          * must indicate connection success.
          */
 
-        if (LLRP::ConnectionAttemptStatusType_Success != pEvent->getStatus())
+        if (LLRP::ConnectionAttemptStatusType_Success != connectionAttemptEvent->getStatus())
         {
-            goto fail;
+            throw LLRPLaps::ReaderConnectionException("recvMessage failed: invalid connection");
         }
-
-        /*
-         * Done with the message
-         */
-
-        delete message;
-
-        if (_verbose)
-        {
-            emit newLogMessage(s.sprintf("INFO: Connection status OK"));
-        }
-
-        /*
-         * Victory.
-         */
-
-        return 0;
-
-        fail:
-
-        /*
-         * Something went wrong. Tattle. Clean up. Return error.
-         */
-
-        emit newLogMessage(s.sprintf("ERROR: checkConnectionStatus failed"));
-
-        delete message;
-        return -1;
     }
 
 
@@ -246,10 +202,7 @@ namespace LLRPLaps
     void CReader::scrubConfiguration()
     {
         resetConfigurationToFactoryDefaults();
-        if (0 != deleteAllROSpecs())
-        {
-            throw LLRPLaps::ReaderException("delete All RO Specs failed");
-        }
+        deleteAllROSpecs();
     }
 
 
@@ -272,15 +225,11 @@ namespace LLRPLaps
 
     void CReader::resetConfigurationToFactoryDefaults()
     {
-        std::shared_ptr<LLRP::CSET_READER_CONFIG> readerConfig;
-        std::shared_ptr<LLRP::CMessage> responseMessage;
-        std::shared_ptr<LLRP::CSET_READER_CONFIG_RESPONSE> configResponse;
-
         /*
          * Compose the command message
          */
 
-        readerConfig = new LLRP::CSET_READER_CONFIG();
+        std::shared_ptr<LLRP::CSET_READER_CONFIG> readerConfig (new LLRP::CSET_READER_CONFIG());
         readerConfig->setMessageID(101);
         readerConfig->setResetToFactoryDefault(1);
 
@@ -288,13 +237,13 @@ namespace LLRPLaps
          * Send the message, expect the response of certain type
          */
 
-        responseMessage = transact(readerConfig);
+        std::shared_ptr<LLRP::CMessage> responseMessage = transact(readerConfig);
 
         /*
          * transact() returns NULL if something went wrong.
          */
 
-        if (NULL == responseMessage)
+        if (nullptr == responseMessage.get())
         {
             /* transact already tattled */
             throw LLRPLaps::ReaderException("transact command failed");
@@ -304,17 +253,13 @@ namespace LLRPLaps
          * Cast to a SET_READER_CONFIG_RESPONSE message.
          */
 
-        configResponse = (LLRP::CSET_READER_CONFIG_RESPONSE *) responseMessage;
+        auto *configResponse = dynamic_cast<LLRP::CSET_READER_CONFIG_RESPONSE *>(responseMessage.get());
 
         /*
          * Check the LLRPStatus parameter.
          */
 
-        if (0 != checkLLRPStatus(configResponse->getLLRPStatus(), "resetConfigurationToFactoryDefaults"))
-        {
-            /* checkLLRPStatus already tattled */
-            throw LLRPLaps::ReaderException("checkLLRPStatus failed");
-        }
+        checkLLRPStatus(configResponse->getLLRPStatus(), "resetConfigurationToFactoryDefaults");
     }
 
 
@@ -337,80 +282,43 @@ namespace LLRPLaps
  **
  *****************************************************************************/
 
-    int CReader::deleteAllROSpecs(void)
+    void CReader::deleteAllROSpecs()
     {
-        LLRP::CDELETE_ROSPEC *pCmd;
-        LLRP::CMessage *pRspMsg;
-        LLRP::CDELETE_ROSPEC_RESPONSE *pRsp;
-        QString s;
-
         /*
          * Compose the command message
          */
 
-        pCmd = new LLRP::CDELETE_ROSPEC();
-        pCmd->setMessageID(102);
-        pCmd->setROSpecID(0);               /* All */
+        std::shared_ptr<LLRP::CDELETE_ROSPEC> cdeleteRospec (new LLRP::CDELETE_ROSPEC());
+        cdeleteRospec->setMessageID(102);
+        cdeleteRospec->setROSpecID(0);               /* All */
 
         /*
          * Send the message, expect the response of certain type
          */
 
-        pRspMsg = transact(pCmd);
+        std::shared_ptr<LLRP::CMessage> responseMessage = transact(cdeleteRospec);
 
-        /*
-         * Done with the command message
-         */
-
-        delete pCmd;
-
-        /*
+       /*
          * transact() returns NULL if something went wrong.
          */
 
-        if (NULL == pRspMsg)
+        if (nullptr == responseMessage)
         {
             /* transact already tattled */
-            return -1;
+            throw LLRPLaps::ReaderException("transact could not create DELETE_ROSPEC command");
         }
 
         /*
          * Cast to a DELETE_ROSPEC_RESPONSE message.
          */
 
-        pRsp = (LLRP::CDELETE_ROSPEC_RESPONSE *) pRspMsg;
+        auto *cdeleteRospecResponse = dynamic_cast<LLRP::CDELETE_ROSPEC_RESPONSE *>(responseMessage.get());
 
         /*
          * Check the LLRPStatus parameter.
          */
 
-        if (0 != checkLLRPStatus(pRsp->getLLRPStatus(), "deleteAllROSpecs"))
-        {
-            /* checkLLRPStatus already tattled */
-            delete pRspMsg;
-            return -1;
-        }
-
-        /*
-         * Done with the response message.
-         */
-
-        delete pRspMsg;
-
-        /*
-         * Tattle progress, maybe
-         */
-
-        if (_verbose)
-        {
-            emit newLogMessage(s.sprintf("INFO: All ROSpecs are deleted"));
-        }
-
-        /*
-         * Victory.
-         */
-
-        return 0;
+        checkLLRPStatus(cdeleteRospecResponse->getLLRPStatus(), "deleteAllROSpecs");
     }
 
 
@@ -556,7 +464,7 @@ namespace LLRPLaps
          *       too will the parameters be.
          */
 
-        std::shared_ptr<LLRP::CADD_ROSPEC> command = new LLRP::CADD_ROSPEC();
+        std::shared_ptr<LLRP::CADD_ROSPEC> command (new LLRP::CADD_ROSPEC());
         command->setMessageID(201);
         command->setROSpec(pROSpec);
 
@@ -570,7 +478,7 @@ namespace LLRPLaps
          * transact() returns NULL if something went wrong.
          */
 
-        if (NULL == responseMessage.get())
+        if (nullptr == responseMessage.get())
         {
             /* transact already tattled */
             throw LLRPLaps::ReaderException("transact failed on addROSpec");
@@ -586,10 +494,7 @@ namespace LLRPLaps
          * Check the LLRPStatus parameter.
          */
 
-        if (0 != checkLLRPStatus(pROSpecResponseMessage->getLLRPStatus(), "addROSpec"))
-        {
-            throw LLRPLaps::ReaderException("checkLLRPStatus bad status on addROSpec");
-        }
+        checkLLRPStatus(pROSpecResponseMessage->getLLRPStatus(), "addROSpec");
     }
 
 
@@ -609,18 +514,13 @@ namespace LLRPLaps
  **
  *****************************************************************************/
 
-    void CReader::enableROSpec(void)
+    void CReader::enableROSpec()
     {
-        std::shared_ptr<LLRP::CENABLE_ROSPEC> command;
-        ;
-        LLRP::CENABLE_ROSPEC_RESPONSE *pRsp;
-        QString s;
-
         /*
          * Compose the command message
          */
 
-        command = new LLRP::CENABLE_ROSPEC();
+        std::shared_ptr<LLRP::CENABLE_ROSPEC> command (new LLRP::CENABLE_ROSPEC());
         command->setMessageID(202);
         command->setROSpecID(123);
 
@@ -634,49 +534,23 @@ namespace LLRPLaps
          * transact() returns NULL if something went wrong.
          */
 
-        if (NULL == responseMessage.get())
+        if (nullptr == responseMessage.get())
         {
             /* transact already tattled */
-            return -1;
+            throw LLRPLaps::ReaderException("Response to ENABLE_ROSPEC command failed");
         }
 
         /*
          * Cast to a ENABLE_ROSPEC_RESPONSE message.
          */
 
-        pRsp = (LLRP::CENABLE_ROSPEC_RESPONSE *) responseMessage;
+        auto *rospecResponse = dynamic_cast<LLRP::CENABLE_ROSPEC_RESPONSE *>(responseMessage.get());
 
         /*
          * Check the LLRPStatus parameter.
          */
 
-        if (0 != checkLLRPStatus(pRsp->getLLRPStatus(), "enableROSpec"))
-        {
-            /* checkLLRPStatus already tattled */
-            delete responseMessage;
-            return -1;
-        }
-
-        /*
-         * Done with the response message.
-         */
-
-        delete responseMessage;
-
-        /*
-         * Tattle progress, maybe
-         */
-
-        if (_verbose)
-        {
-            emit newLogMessage(s.sprintf("INFO: ROSpec enabled"));
-        }
-
-        /*
-         * Victory.
-         */
-
-        return 0;
+        checkLLRPStatus(rospecResponse->getLLRPStatus(), "enableROSpec");
     }
 
 
@@ -697,82 +571,44 @@ namespace LLRPLaps
  **
  *****************************************************************************/
 
-    int CReader::startROSpec(void)
+    void CReader::startROSpec(void)
     {
-        LLRP::CSTART_ROSPEC *pCmd;
-        LLRP::CMessage *pRspMsg;
-        LLRP::CSTART_ROSPEC_RESPONSE *pRsp;
-        QString s;
-
         /*
          * Compose the command message
          */
 
-        pCmd = new LLRP::CSTART_ROSPEC();
-        pCmd->setMessageID(202);
-        pCmd->setROSpecID(123);
+        std::shared_ptr<LLRP::CSTART_ROSPEC> cstartRospecCommand (new LLRP::CSTART_ROSPEC());
+        cstartRospecCommand->setMessageID(202);
+        cstartRospecCommand->setROSpecID(123);
 
         /*
          * Send the message, expect the response of certain type
          */
 
-        pRspMsg = transact(pCmd);
+        std::shared_ptr<LLRP::CMessage> responseMessage = transact(cstartRospecCommand);
 
-        /*
-         * Done with the command message
-         */
-
-        delete pCmd;
-
-        /*
+       /*
          * transact() returns NULL if something went wrong.
          */
 
-        if (NULL == pRspMsg)
+        if (nullptr == responseMessage.get())
         {
             /* transact already tattled */
-            return -1;
+            throw LLRPLaps::ReaderException("Response to START_ROSPEC command invalid");
         }
 
         /*
          * Cast to a START_ROSPEC_RESPONSE message.
          */
 
-        pRsp = (LLRP::CSTART_ROSPEC_RESPONSE *) pRspMsg;
+        auto *response = dynamic_cast<LLRP::CSTART_ROSPEC_RESPONSE *>(responseMessage.get());
 
         /*
          * Check the LLRPStatus parameter.
          */
 
-        if (0 != checkLLRPStatus(pRsp->getLLRPStatus(), "startROSpec"))
-        {
-            /* checkLLRPStatus already tattled */
-            delete pRspMsg;
-            return -1;
-        }
-
-        /*
-         * Done with the response message.
-         */
-
-        delete pRspMsg;
-
-        /*
-         * Tattle progress
-         */
-
-        if (_verbose)
-        {
-            emit newLogMessage(s.sprintf("INFO: ROSpec started"));
-        }
-
-        /*
-         * Victory.
-         */
-
-        return 0;
+        checkLLRPStatus(response->getLLRPStatus(), "startROSpec");
     }
-
 
 /**
  *****************************************************************************
@@ -789,20 +625,17 @@ namespace LLRPLaps
  **
  *****************************************************************************/
 
-    int CReader::awaitReports(void)
+    void CReader::awaitReports()
     {
-        int bDone = 0;
-        int retVal = 0;
-        QString s;
+        bool done(false);
 
         /*
          * Keep receiving messages until done or until
          * something bad happens.
          */
 
-        while (!bDone)
+        while (!done)
         {
-            LLRP::CMessage *pMessage;
             const LLRP::CTypeDescriptor *pType;
 
             /*
@@ -810,16 +643,14 @@ namespace LLRPLaps
              * should occur within 5 seconds.
              */
 
-            pMessage = recvMessage(7000);
-            if (NULL == pMessage)
+            auto recvMessage = recvMessage(TIMEOUT_7SEC);
+            if (nullptr == recvMessage.get())
             {
                 /*
                  * Did not receive a message within a reasonable
                  * amount of time. recvMessage() already tattled
                  */
-                retVal = -2;
-                bDone = 1;
-                continue;
+                throw LLRPLaps::ReaderTimeoutException("timeout waiting for recvMessage awating reports");
             }
 
             /*
@@ -828,7 +659,7 @@ namespace LLRPLaps
              * discriminate message types.
              */
 
-            pType = pMessage->m_pType;
+            pType = recvMessage->m_pType;
 
             /*
              * Is it a tag report? If so, process.
@@ -836,12 +667,8 @@ namespace LLRPLaps
 
             if (&LLRP::CRO_ACCESS_REPORT::s_typeDescriptor == pType)
             {
-                LLRP::CRO_ACCESS_REPORT *pNtf;
-                pNtf = (LLRP::CRO_ACCESS_REPORT *) pMessage;
-
-                processTagList(pNtf);
-                bDone = 1;
-                retVal = 0;
+                processTagList(dynamic_cast<LLRP::CRO_ACCESS_REPORT *>(recvMessage));
+                done = true;
             }
 
                 /*
@@ -851,15 +678,11 @@ namespace LLRPLaps
 
             else if (&LLRP::CREADER_EVENT_NOTIFICATION::s_typeDescriptor == pType)
             {
-                LLRP::CREADER_EVENT_NOTIFICATION *pNtf;
-                LLRP::CReaderEventNotificationData *pNtfData;
-
-                pNtf = (LLRP::CREADER_EVENT_NOTIFICATION *) pMessage;
-
-                pNtfData = pNtf->getReaderEventNotificationData();
-                if (NULL != pNtfData)
+                auto *creaderEventNotification = (LLRP::CREADER_EVENT_NOTIFICATION *) recvMessage;
+                auto *readerEventNotificationData = creaderEventNotification->getReaderEventNotificationData();
+                if (nullptr != readerEventNotificationData)
                 {
-                    handleReaderEventNotification(pNtfData);
+                    handleReaderEventNotification(readerEventNotificationData);
                 }
                 else
                 {
@@ -868,7 +691,7 @@ namespace LLRPLaps
                      * to keep indent depth down.
                      */
 
-                    emit newLogMessage(s.sprintf("WARNING: READER_EVENT_NOTIFICATION without data"));
+                    // LOG(QString().sprintf("WARNING: READER_EVENT_NOTIFICATION without data"));
                 }
             }
 
@@ -878,17 +701,10 @@ namespace LLRPLaps
 
             else
             {
-                emit newLogMessage(s.sprintf("WARNING: Ignored unexpected message during monitor: %s", pType->m_pName));
+                // LOG(QString().sprintf("WARNING: Ignored unexpected message during monitor: %s", pType->m_pName));
             }
 
-            /*
-             * Done with the received message
-             */
-
-            delete pMessage;
         }
-
-        return retVal;
     }
 
 
@@ -906,12 +722,11 @@ namespace LLRPLaps
  **
  *****************************************************************************/
 
-    void CReader::processTagList(LLRP::CRO_ACCESS_REPORT *pRO_ACCESS_REPORT)
+    void CReader::processTagList(std::shared_ptr<LLRP::CRO_ACCESS_REPORT> RO_ACCESS_REPORT)
     {
-        std::list<LLRP::CTagReportData *>::iterator Cur;
-        for (Cur = pRO_ACCESS_REPORT->beginTagReportData(); Cur != pRO_ACCESS_REPORT->endTagReportData(); Cur++)
+        for (std::list<LLRP::CTagReportData*>::iterator i = RO_ACCESS_REPORT->beginTagReportData(); RO_ACCESS_REPORT->endTagReportData() != i; ++i)
         {
-            processTagInfo(*Cur);
+            processTagInfo(*i);
         }
     }
 
@@ -925,63 +740,59 @@ namespace LLRPLaps
  **
  *****************************************************************************/
 
-    void CReader::processTagInfo(LLRP::CTagReportData *pTagReportData)
+    void CReader::processTagInfo(LLRP::CTagReportData *tagReportData)
     {
-        const LLRP::CTypeDescriptor *pType;
-        LLRP::CParameter *pEPCParameter = pTagReportData->getEPCParameter();
-        CTagInfo tagInfo;
+        const LLRP::CTypeDescriptor *cTypeDescriptor;
+        auto *pEPCParameter = tagReportData->getEPCParameter();
+        LLRPLaps::CTagInfo tagInfo;
 
         /*
          * Process the EPC. It could be a 96-bit EPC_96 parameter
          * or an variable length EPCData parameter.
          */
 
-        if (NULL != pEPCParameter)
+        if (nullptr != pEPCParameter)
         {
             LLRP::llrp_u96_t my_u96;
             LLRP::llrp_u1v_t my_u1v;
-            LLRP::llrp_u8_t *pValue = NULL;
+            LLRP::llrp_u8_t *value = NULL;
             int n;
 
-            pType = pEPCParameter->m_pType;
-            if (&LLRP::CEPC_96::s_typeDescriptor == pType)
+            cTypeDescriptor = pEPCParameter->m_pType;
+            if (&LLRP::CEPC_96::s_typeDescriptor == cTypeDescriptor)
             {
-                LLRP::CEPC_96 *pEPC_96;
-
-                pEPC_96 = (LLRP::CEPC_96 *) pEPCParameter;
+                auto *pEPC_96 = dynamic_cast<LLRP::CEPC_96 *>(pEPCParameter);
                 my_u96 = pEPC_96->getEPC();
-                pValue = my_u96.m_aValue;
+                value = my_u96.m_aValue;
                 n = 12u;
             }
-            else if (&LLRP::CEPCData::s_typeDescriptor == pType)
+            else if (&LLRP::CEPCData::s_typeDescriptor == cTypeDescriptor)
             {
-                LLRP::CEPCData *pEPCData;
-
-                pEPCData = (LLRP::CEPCData *) pEPCParameter;
+                auto *pEPCData = dynamic_cast<LLRP::CEPCData *>(pEPCParameter);
                 my_u1v = pEPCData->getEPC();
-                pValue = my_u1v.m_pValue;
+                value = my_u1v.m_pValue;
                 n = (my_u1v.m_nBit + 7u) / 8u;
             }
 
-            if (pValue)
+            if (value)
             {
-                tagInfo._timeStampUSec = pTagReportData->getFirstSeenTimestampUTC()->getMicroseconds();
-                tagInfo.AntennaId = pTagReportData->getAntennaID()->getAntennaID();
+                tagInfo.setTimeStampUSec(tagReportData->getFirstSeenTimestampUTC()->getMicroseconds());
+                tagInfo.AntennaId = tagReportData->getAntennaID()->getAntennaID();
                 tagInfo.data.reserve(n);
                 for (int i = 0; i < n; i++)
                 {
-                    tagInfo.data.append(pValue[i]);
+                    tagInfo.data.push_back(value[i]);
                 }
                 emit newTag(tagInfo);
             }
             else
             {
-                emit newLogMessage(QString("Unknown-epc-data-type in tag"));
+                // LOG(QString("Unknown-epc-data-type in tag"));
             }
         }
         else
         {
-            emit newLogMessage(QString("Missing-epc-data in tag"));
+            // LOGQString("Missing-epc-data in tag"));
         }
     }
 
@@ -999,25 +810,22 @@ namespace LLRPLaps
  **
  *****************************************************************************/
 
-    void CReader::handleReaderEventNotification(LLRP::CReaderEventNotificationData *pNtfData)
+    void CReader::handleReaderEventNotification(LLRP::CReaderEventNotificationData *cReaderEventNotificationData)
     {
-        LLRP::CAntennaEvent *pAntennaEvent;
-        LLRP::CReaderExceptionEvent *pReaderExceptionEvent;
-        int nReported = 0;
-        QString s;
+        auto reported = false;
 
-        pAntennaEvent = pNtfData->getAntennaEvent();
+        auto *pAntennaEvent = cReaderEventNotificationData->getAntennaEvent();
         if (NULL != pAntennaEvent)
         {
             handleAntennaEvent(pAntennaEvent);
-            nReported++;
+            reported = true;
         }
 
-        pReaderExceptionEvent = pNtfData->getReaderExceptionEvent();
+        auto *pReaderExceptionEvent = cReaderEventNotificationData->getReaderExceptionEvent();
         if (NULL != pReaderExceptionEvent)
         {
             handleReaderExceptionEvent(pReaderExceptionEvent);
-            nReported++;
+            reported = true;
         }
 
         /*
@@ -1034,9 +842,9 @@ namespace LLRPLaps
          *      Custom
          */
 
-        if (0 == nReported)
+        if (0 == reported)
         {
-            emit newLogMessage(s.sprintf("NOTICE: Unexpected (unhandled) ReaderEvent"));
+            // LOG("NOTICE: Unexpected (unhandled) ReaderEvent"));
         }
     }
 
@@ -1077,7 +885,7 @@ namespace LLRPLaps
                 break;
         }
 
-        emit newLogMessage(s.sprintf("NOTICE: Antenna %d is %s", AntennaID, stateStr.c_str()));
+        // LOG(s.sprintf("NOTICE: Antenna %d is %s", AntennaID,ß stateStr.c_str()));
     }
 
 
@@ -1102,11 +910,11 @@ namespace LLRPLaps
 
         if (0 < Message.m_nValue && NULL != Message.m_pValue)
         {
-            emit newLogMessage(s.sprintf("NOTICE: ReaderException '%.*s'", Message.m_nValue, Message.m_pValue));
+            // LOG(s.sprintf("NOTICE: ReaderException '%.*s'", Message.m_nValue, Message.m_pValue));
         }
         else
         {
-            emit newLogMessage(s.sprintf("NOTICE: ReaderException but no message"));
+            // LOG(emit newLogMessage(s.sprintf("NOTICE: ReaderException but no message"));
         }
     }
 
@@ -1129,10 +937,8 @@ namespace LLRPLaps
  **
  *****************************************************************************/
 
-    int CReader::checkLLRPStatus(LLRP::CLLRPStatus *pLLRPStatus, const char *pWhatStr)
+    void CReader::checkLLRPStatus(LLRP::CLLRPStatus* llrpStatus, const std::string whatStr)
     {
-        QString s;
-
         /*
          * The LLRPStatus parameter is mandatory in all responses.
          * If it is missing there should have been a decode error.
@@ -1140,10 +946,10 @@ namespace LLRPLaps
          * diagnostic and suppose to catch LTKC mistakes).
          */
 
-        if (NULL == pLLRPStatus)
+        if (nullptr == llrpStatus)
         {
-            emit newLogMessage(s.sprintf("ERROR: %s missing LLRP status", pWhatStr));
-            return -1;
+            // LOG(s.sprintf("ERROR: %s missing LLRP status", pWhatStr));
+            throw LLRPLaps::ReaderException(QString().sprintf("ERROR: %s missing LLRP status", whatStr).toStdString());
         }
 
         /*
@@ -1154,29 +960,22 @@ namespace LLRPLaps
          * and examine the XML output.
          */
 
-        if (LLRP::StatusCode_M_Success != pLLRPStatus->getStatusCode())
+        if (LLRP::StatusCode_M_Success != llrpStatus->getStatusCode())
         {
             LLRP::llrp_utf8v_t ErrorDesc;
 
-            ErrorDesc = pLLRPStatus->getErrorDescription();
-
+            ErrorDesc = llrpStatus->getErrorDescription();
+            QString errorStr;
             if (0 == ErrorDesc.m_nValue)
             {
-                emit newLogMessage(s.sprintf("ERROR: %s failed, no error description given", pWhatStr));
+                errorStr.sprintf("ERROR: %s failed, no error description given", whatStr));
             }
             else
             {
-                emit newLogMessage(
-                        s.sprintf("ERROR: %s failed, %.*s", pWhatStr, ErrorDesc.m_nValue, ErrorDesc.m_pValue));
+                errorStr.sprintf("ERROR: %s failed, %.*s", whatStr, ErrorDesc.m_nValue, ErrorDesc.m_pValue));
             }
-            return -2;
+            throw LLRPLaps::ReaderException(errorStr.toStdString());
         }
-
-        /*
-         * Victory. Everything is fine.
-         */
-
-        return 0;
     }
 
 
@@ -1203,9 +1002,9 @@ namespace LLRPLaps
  **
  *****************************************************************************/
 
-    LLRP::CMessage *CReader::transact(LLRP::CMessage *pSendMsg)
+    std::shared_ptr<LLRP::CMessage> CReader::transact(std::shared_ptr<LLRP::CMessage> sendMsg)
     {
-        LLRP::CMessage *pRspMsg;
+        std::shared_ptr<LLRP::CMessage> message;
         QString s;
 
         /*
@@ -1213,12 +1012,7 @@ namespace LLRPLaps
          * verbosity is 2 or higher.
          */
 
-        if (1 < _verbose)
-        {
-            emit newLogMessage(s.sprintf("\n==================================="));
-            emit newLogMessage(s.sprintf("INFO: Transact sending"));
-            printXMLMessage(pSendMsg);
-        }
+        printXMLMessage(sendMsg);
 
         /*
          * Send the message, expect the response of certain type.
@@ -1226,27 +1020,27 @@ namespace LLRPLaps
          * an error. In that case we try to print the error details.
          */
 
-        pRspMsg = _connectionToReader->transact(pSendMsg, 5000);
+        message = _connectionToReader->transact(sendMsg.get(), TIMEOUT_5SEC);
 
-        if (NULL == pRspMsg)
+        if (nullptr == message)
         {
             const LLRP::CErrorDetails *pError = _connectionToReader->getTransactError();
 
-            emit newLogMessage(s.sprintf("ERROR: %s transact failed, %s", pSendMsg->m_pType->m_pName, pError->m_pWhatStr
-                                                                                                      ? pError->m_pWhatStr
-                                                                                                      : "no reason given"));
+            // LOG(s.sprintf("ERROR: %s transact failed, %s", sendMsg->m_pType->m_pName, pError->m_pWhatStr
+            //                                                                                          ? pError->m_pWhatStr
+            //                                                                                          : "no reason given"));
 
-            if (NULL != pError->m_pRefType)
+            if (nullptr != pError->m_pRefType)
             {
-                emit newLogMessage(s.sprintf("ERROR: ... reference type %s", pError->m_pRefType->m_pName));
+                // LOG(s.sprintf("ERROR: ... reference type %s", pError->m_pRefType->m_pName));
             }
 
-            if (NULL != pError->m_pRefField)
+            if (nullptr != pError->m_pRefField)
             {
-                emit newLogMessage(s.sprintf("ERROR: ... reference field %s", pError->m_pRefField->m_pName));
+                // LOG((s.sprintf("ERROR: ... reference field %s", pError->m_pRefField->m_pName));
             }
 
-            return NULL;
+            return nullptr;
         }
 
         /*
@@ -1254,12 +1048,7 @@ namespace LLRPLaps
          * verbosity is 2 or higher.
          */
 
-        if (1 < _verbose)
-        {
-            emit newLogMessage(s.sprintf("\n- - - - - - - - - - - - - - - - - -"));
-            emit newLogMessage(s.sprintf("INFO: Transact received response"));
-            printXMLMessage(pRspMsg);
-        }
+        printXMLMessage(message);
 
         /*
          * If it is an ERROR_MESSAGE (response from reader
@@ -1267,18 +1056,15 @@ namespace LLRPLaps
          * and declare defeat.
          */
 
-        if (&LLRP::CERROR_MESSAGE::s_typeDescriptor == pRspMsg->m_pType)
+        if (&LLRP::CERROR_MESSAGE::s_typeDescriptor == message->m_pType)
         {
-            const LLRP::CTypeDescriptor *pResponseType;
+            const LLRP::CTypeDescriptor *pResponseType = sendMsg->m_pType->m_pResponseType;
 
-            pResponseType = pSendMsg->m_pType->m_pResponseType;
-
-            emit newLogMessage(s.sprintf("ERROR: Received ERROR_MESSAGE instead of %s", pResponseType->m_pName));
-            delete pRspMsg;
-            pRspMsg = NULL;
+            // LOG(s.sprintf("ERROR: Received ERROR_MESSAGE instead of %s", pResponseType->m_pName));
+            message = nullptr;
         }
 
-        return pRspMsg;
+        return message;
     }
 
 
@@ -1356,8 +1142,6 @@ namespace LLRPLaps
 
     void CReader::sendMessage(std::shared_ptr<LLRP::CMessage> sendMsg)
     {
-        QString s;
-
         /*
          * Print the XML text for the outbound message if
          * verbosity is 2 or higher.
@@ -1373,7 +1157,7 @@ namespace LLRPLaps
 
         if (LLRP::RC_OK != _connectionToReader->sendMessage(sendMsg.get()))
         {
-            throw ReaderErrorDetailsException(ReaderErrorDetailsException::CErrorDetailsToString(_connectionToReader->getSendError(), sendMsg->m_pType->m_pName, "sendMsg"));
+            throw LLRPLaps::ReaderErrorDetailsException(LLRPLaps::ReaderErrorDetailsException::CErrorDetailsToString(_connectionToReader->getSendError(), sendMsg->m_pType->m_pName, "sendMsg"));
         }
     }
 
@@ -1395,7 +1179,7 @@ namespace LLRPLaps
  **
  *****************************************************************************/
 
-    void CReader::printXMLMessage(LLRP::CMessage *pMessage)
+    void CReader::printXMLMessage(std::shared_ptr<LLRP::CMessage> message)
     {
         char aBuf[100 * 1024];
         QString s;
@@ -1407,12 +1191,12 @@ namespace LLRPLaps
          * be checked.
          */
 
-        pMessage->toXMLString(aBuf, sizeof aBuf);
+        message->toXMLString(aBuf, sizeof aBuf);
 
         /*
          * Print the XML Text to the standard output.
          */
 
-        emit newLogMessage(s.sprintf("%s", aBuf));
+        // LOG(s.sprintf("%s", aBuf));
     }
 }

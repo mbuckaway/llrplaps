@@ -28,44 +28,78 @@
 #include <QString>
 
 #include "ltkcpp.h"
+#include "ctaginfo.h"
 
-class CTagInfo;
+class LLRPLaps::CTagInfo;
 
-Q_DECLARE_METATYPE(CTagInfo);
+Q_DECLARE_METATYPE(LLRPLaps::CTagInfo);
 
-
-class CReader : public QObject
+namespace LLRPLaps
 {
+
+    class CReader : public QObject
+    {
     Q_OBJECT
-public:
-    explicit CReader(QString readerHostName);
-    virtual ~CReader();
-    int ProcessRecentChipsSeen();
-signals:
-    void newTag(const CTagInfo&);
+    public:
+        explicit CReader(QString readerHostName);
 
-private:
-    std::shared_ptr<LLRP::CConnection> _connectionToReader;
-    std::shared_ptr<LLRP::CTypeRegistry> _typeRegistry;
-    int checkConnectionStatus();
-    std::shared_ptr<LLRP::CMessage> recvMessage(int nMaxMS);
-    void printXMLMessage(std::shared_ptr<LLRP::CMessage> message);
-    void scrubConfiguration();
-    void resetConfigurationToFactoryDefaults();
-    int deleteAllROSpecs();
-    void addROSpec();
-    void enableROSpec();
-    int startROSpec();
-    void handleReaderEventNotification(std::shared_ptr<LLRP::CReaderEventNotificationData> notifyData);
-    void handleAntennaEvent(std::shared_ptr<LLRP::CAntennaEvent> antennaEvent);
-    void handleReaderExceptionEvent(std::shared_ptr<LLRP::CReaderExceptionEvent> readerExceptionEvent);
-    int checkLLRPStatus(std::shared_ptr<LLRP::CLLRPStatus> LLRPStatus, const std::string& whatStr);
-    std::shared_ptr<LLRP::CMessage> transact(std::shared_ptr<LLRP::CMessage> sendMsg);
-    void sendMessage(std::shared_ptr<LLRP::CMessage> sendMsg);
-    int awaitReports();
-    void processTagList(std::shared_ptr<LLRP::CRO_ACCESS_REPORT> RO_ACCESS_REPORT);
-    void processTagInfo(std::shared_ptr<LLRP::CTagReportData> tagReportData);
-    std::string CErrorDetailsToString(const LLRP::CErrorDetails *errorDetails);
-};
+        ~CReader() override;
 
+        void ProcessRecentChipsSeen();
+
+        void Connect();
+
+    signals:
+
+        void newTag(const LLRPLaps::CTagInfo &);
+
+    private:
+        std::shared_ptr<LLRP::CConnection> _connectionToReader;
+        LLRP::CTypeRegistry* _typeRegistry;
+        QString _readerHostname;
+
+        void checkConnectionStatus();
+
+        std::shared_ptr<LLRP::CMessage> recvMessage(int nMaxMS);
+
+        void printXMLMessage(std::shared_ptr<LLRP::CMessage> message);
+
+        void scrubConfiguration();
+
+        void resetConfigurationToFactoryDefaults();
+
+        void deleteAllROSpecs();
+
+        void addROSpec();
+
+        void enableROSpec();
+
+        void startROSpec();
+
+        void handleReaderEventNotification(LLRP::CReaderEventNotificationData *cReaderEventNotificationData);
+
+        void handleAntennaEvent(LLRP::CAntennaEvent *antennaEvent);
+
+        void handleReaderExceptionEvent(LLRP::CReaderExceptionEvent *readerExceptionEvent);
+
+        void checkLLRPStatus(LLRP::CLLRPStatus* llrpStatus, const std::string whatStr);
+
+        std::shared_ptr<LLRP::CMessage> transact(std::shared_ptr<LLRP::CMessage> sendMsg);
+
+        void sendMessage(std::shared_ptr<LLRP::CMessage> sendMsg);
+
+        void awaitReports();
+
+        void processTagList(std::shared_ptr<LLRP::CRO_ACCESS_REPORT> RO_ACCESS_REPORT);
+
+        void processTagInfo(LLRP::CTagReportData *tagReportData);
+
+        std::string CErrorDetailsToString(const LLRP::CErrorDetails *errorDetails);
+
+        const static int TIMEOUT_10SEC;
+        const static int TIMEOUT_7SEC;
+        const static int TIMEOUT_5SEC;
+    };
+
+}
 #endif // CREADER_H

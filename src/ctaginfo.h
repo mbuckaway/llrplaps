@@ -21,8 +21,7 @@
 #define LLRPLAPS_CTAGINFO_H
 
 #include <cstdint>
-
-#include <QObject>
+#include <vector>
 
 namespace LLRPLaps
 {
@@ -39,7 +38,9 @@ namespace LLRPLaps
 
         double getTimeStampSec() const;
 
-        QList<unsigned char> data;
+        void setTimeStampUSec(u_int64_t timeStampUSec) { _timeStampUSec = timeStampUSec; }
+
+        std::vector<unsigned char> data;
 
     private:
         u_int64_t _timeStampUSec;
